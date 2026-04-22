@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FC Mobile Tournament</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link rel="stylesheet" href="static/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>FC Mobile Tournament</h1>
+        <div id="info"><p>Загрузка...</p></div>
+        <button onclick="window.location.href='app.html'">Открыть таблицы и матчи</button>
+    </div>
+    <script src="static/app.js"></script>
+    <script>
+        Telegram.WebApp.ready(); Telegram.WebApp.expand(); loadTournamentInfo();
+    </script>
+</body>
+</html>
