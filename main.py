@@ -1,3 +1,6 @@
+import nest_asyncio
+nest_asyncio.apply()
+
 import asyncio
 import logging
 from flask import Flask, request, jsonify, send_from_directory
