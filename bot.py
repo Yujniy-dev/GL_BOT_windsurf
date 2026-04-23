@@ -2,13 +2,15 @@ import logging, re, asyncio
 from aiogram import Bot, Dispatcher, Router, F, types
 from aiogram.filters import Command, CommandStart
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
-from models import get_db, Participant, Chat
+from io import BytesIO
+from models import get_db, Participant, Chat, Match
 from tournament import (
     create_tournament, register_participant, close_registration,
     get_active_tournament, get_user_matches, get_all_standings,
     find_match_by_players, submit_match_result, get_remaining_matches_for_user
 )
 from config import BOT_TOKEN, ADMIN_IDS, WEBAPP_URL
+from ocr import recognize_image, parse_score
 
 logging.basicConfig(level=logging.INFO)
 router = Router()
@@ -103,6 +105,8 @@ async def ad_open_chat(c: types.CallbackQuery):
     try:
         msg=await c.bot.send_message(chat_id, f"📝 <b>Сбор на {t.name}!</b>\n\nОтветь +ник\nПример: <code>+ProPlayer</code>\n\nУчастники:\n", parse_mode="HTML")
         reg_msg_id, reg_chat_id, reg_text = msg.message_id, msg.chat.id, msg.html_text
+        t.chat_id = msg.chat.id
+        db.commit()
         await c.message.answer(f"✅ Сбор открыт в группе: <b>{msg.chat.title}</b>", parse_mode="HTML")
     except Exception as e:
         await c.message.answer(f"❌ Не удалось отправить в группу: {e}")
@@ -138,20 +142,25 @@ async def ad_list(c: types.CallbackQuery):
 async def ad_close(c: types.CallbackQuery):
     db=next(get_db()); t=get_active_tournament(db)
     if not t or t.status.value!="registration": return await c.answer("Нет турнира для закрытия!")
+    target_chat=t.chat_id
+    if not target_chat:
+        return await c.message.answer("❌ Не найден чат регистрации. Открой регистрацию заново.")
     t2=close_registration(db,t.id)
     if not t2: return await c.answer("Недостаточно участников!")
-    await c.message.answer(f"🔒 Регистрация закрыта. Участников: {len(t2.participants)}. Жеребьевка...")
+    await c.message.answer(f"🔒 Регистрация закрыта. Участников: {len(t2.participants)}. Жеребьевка в группе...")
+    await c.bot.send_message(target_chat, f"🔒 Регистрация закрыта. Участников: {len(t2.participants)}.\n🎲 Жеребьевка...")
     for g in t2.groups:
-        await c.message.answer(f"<b>{g.name}:</b>\nНачинаю жеребьевку...", parse_mode="HTML")
+        await c.bot.send_message(target_chat, f"<b>{g.name}:</b>\nНачинаю жеребьевку...", parse_mode="HTML")
         await asyncio.sleep(1)
         names=[f"{p.game_nickname} (@{p.username})" for p in g.participants]
         txt=f"<b>{g.name}:</b>\n"
-        msg=await c.message.answer(txt, parse_mode="HTML")
+        msg=await c.bot.send_message(target_chat, txt, parse_mode="HTML")
         for i,nm in enumerate(names,1):
             txt+=f"{i}. {nm}\n"
             await msg.edit_text(txt, parse_mode="HTML")
             await asyncio.sleep(0.8)
-    await c.message.answer("✅ Жеребьевка завершена!\n\nКаждый с каждым — 2 матча.\nНапиши мне в личку <code>с кем я играю</code>\nРезультат: <code>@user выиграл 3-0 @opp</code>", parse_mode="HTML")
+    await c.bot.send_message(target_chat, "✅ Жеребьевка завершена!\n\nКаждый с каждым — 2 матча.\nНапишите боту в личку <code>с кем я играю</code>\nРезультат матча прямо в группе: <code>@user выиграл 3-0 @opp</code>", parse_mode="HTML")
+    await c.message.answer("✅ Жеребьевка проведена в группе.")
     await c.answer()
 
 @router.message(F.text.lower().contains("с кем я играю"))
@@ -196,10 +205,118 @@ async def res_draw(m: types.Message): await _proc_result(m, is_draw=True)
 async def handle_photo(m: types.Message):
     db=next(get_db()); t=get_active_tournament(db)
     if not t or t.status.value!="active": return
-    await m.reply(
-        "📸 Скриншот получен. Для сохранения результата подтверди текстом:\n"
-        "<code>@твой_ник выиграл 3-0 @ник_соперника</code>\n"
-        "или <code>@ник_1 ничья 2-2 @ник_2</code>",
+    participant=db.query(Participant).filter(Participant.tournament_id==t.id, Participant.user_id==m.from_user.id).first()
+    if not participant:
+        return await m.reply("Ты не участник турнира.")
+    # незавершённые матчи игрока
+    pending=db.query(Match).filter(
+        Match.tournament_id==t.id,
+        Match.status=="pending",
+        ((Match.player1_id==participant.id) | (Match.player2_id==participant.id))
+    ).all()
+    if not pending:
+        return await m.reply("У тебя нет незавершённых матчей.")
+    status_msg=await m.reply("📸 Распознаю скриншот...")
+    try:
+        photo=m.photo[-1]  # самое большое фото
+        file=await m.bot.get_file(photo.file_id)
+        buf=BytesIO()
+        await m.bot.download_file(file.file_path, destination=buf)
+        buf.seek(0)
+        text=await recognize_image(buf)
+    except Exception as e:
+        return await status_msg.edit_text(f"❌ Ошибка OCR: {e}")
+    score=parse_score(text)
+    if not score:
+        return await status_msg.edit_text(
+            "❌ Не удалось распознать счёт на скриншоте.\n\nВведи результат текстом:\n"
+            "<code>@твой_ник выиграл 3-0 @ник_соперника</code>",
+            parse_mode="HTML"
+        )
+    s1,s2=score
+    # кнопки с соперниками
+    rows=[]
+    for mt in pending:
+        opp = mt.player2 if mt.player1_id==participant.id else mt.player1
+        if not opp: continue
+        # порядок очков: для игрока s1 — его, s2 — сопернику
+        # в match player1 может быть как мы, так и соперник
+        rows.append([InlineKeyboardButton(
+            text=f"vs {opp.game_nickname} ({s1}:{s2})",
+            callback_data=f"ocr:{mt.id}:{s1}:{s2}:{participant.id}"
+        )])
+    rows.append([InlineKeyboardButton(text="🔁 Перевернуть счёт", callback_data=f"ocrflip:{s1}:{s2}")])
+    rows.append([InlineKeyboardButton(text="❌ Отмена", callback_data="ocrcancel")])
+    kb=InlineKeyboardMarkup(inline_keyboard=rows)
+    await status_msg.edit_text(
+        f"📸 Распознан счёт: <b>{s1}:{s2}</b>\n\nВыбери соперника:",
+        parse_mode="HTML",
+        reply_markup=kb
+    )
+
+
+@router.callback_query(F.data.startswith("ocrflip:"))
+async def ocr_flip(c: types.CallbackQuery):
+    _, s1, s2 = c.data.split(":")
+    s1, s2 = int(s1), int(s2)
+    # просто показываем тот же список, но счёт поменян
+    db=next(get_db()); t=get_active_tournament(db)
+    if not t: return await c.answer("Нет турнира.")
+    participant=db.query(Participant).filter(Participant.tournament_id==t.id, Participant.user_id==c.from_user.id).first()
+    if not participant: return await c.answer("Ты не участник.")
+    pending=db.query(Match).filter(
+        Match.tournament_id==t.id,
+        Match.status=="pending",
+        ((Match.player1_id==participant.id) | (Match.player2_id==participant.id))
+    ).all()
+    ns1, ns2 = s2, s1
+    rows=[]
+    for mt in pending:
+        opp = mt.player2 if mt.player1_id==participant.id else mt.player1
+        if not opp: continue
+        rows.append([InlineKeyboardButton(
+            text=f"vs {opp.game_nickname} ({ns1}:{ns2})",
+            callback_data=f"ocr:{mt.id}:{ns1}:{ns2}:{participant.id}"
+        )])
+    rows.append([InlineKeyboardButton(text="🔁 Перевернуть счёт", callback_data=f"ocrflip:{ns1}:{ns2}")])
+    rows.append([InlineKeyboardButton(text="❌ Отмена", callback_data="ocrcancel")])
+    kb=InlineKeyboardMarkup(inline_keyboard=rows)
+    await c.message.edit_text(
+        f"📸 Распознан счёт: <b>{ns1}:{ns2}</b>\n\nВыбери соперника:",
+        parse_mode="HTML",
+        reply_markup=kb
+    )
+    await c.answer("Счёт перевёрнут")
+
+
+@router.callback_query(F.data=="ocrcancel")
+async def ocr_cancel(c: types.CallbackQuery):
+    await c.message.edit_text("❌ Отменено. Введи результат текстом: <code>@твой_ник выиграл 3-0 @соперник</code>", parse_mode="HTML")
+    await c.answer()
+
+
+@router.callback_query(F.data.startswith("ocr:"))
+async def ocr_submit(c: types.CallbackQuery):
+    _, match_id, s1, s2, player_id = c.data.split(":")
+    match_id, s1, s2, player_id = int(match_id), int(s1), int(s2), int(player_id)
+    db=next(get_db())
+    mt=db.query(Match).filter(Match.id==match_id, Match.status=="pending").first()
+    if not mt:
+        return await c.answer("Матч уже сыгран или не найден.", show_alert=True)
+    # убедимся что нажал один из участников матча
+    if c.from_user.id not in [mt.player1.user_id if mt.player1 else None, mt.player2.user_id if mt.player2 else None]:
+        return await c.answer("Только участники этого матча могут подтвердить.", show_alert=True)
+    # s1:s2 были с точки зрения отправителя (player_id). Сопоставим с player1/player2.
+    if mt.player1_id == player_id:
+        p1_score, p2_score = s1, s2
+    else:
+        p1_score, p2_score = s2, s1
+    submit_match_result(db, mt.id, p1_score, p2_score)
+    p1n = mt.player1.game_nickname if mt.player1 else "?"
+    p2n = mt.player2.game_nickname if mt.player2 else "?"
+    await c.message.edit_text(
+        f"✅ Результат сохранён:\n<b>{p1n} {p1_score}:{p2_score} {p2n}</b>",
         parse_mode="HTML"
     )
+    await c.answer("Сохранено!")
 

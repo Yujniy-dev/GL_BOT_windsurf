@@ -84,6 +84,9 @@ Telegram-бот для проведения групповых турниров 
 | `BOT_TOKEN` | `твой_токен_от_BotFather` |
 | `ADMIN_IDS` | `твой_telegram_id` |
 | `WEBAPP_URL` | `https://fc-mobile-bot-xxx.onrender.com` (подставь свой URL из Render) |
+| `OCR_API_KEY` | `твой_ключ_с_ocr.space` (для распознавания скриншотов) |
+
+Получи бесплатный OCR ключ на [ocr.space/ocrapi/freekey](https://ocr.space/ocrapi/freekey) — просто введи email, ключ придёт в письме. 25000 запросов/месяц бесплатно.
 
 3. URL сервиса виден на странице Dashboard (например `https://fc-mobile-bot-abc123.onrender.com`)
 

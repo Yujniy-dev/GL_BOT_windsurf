@@ -24,6 +24,7 @@ class Tournament(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     groups_count = Column(Integer, default=1)
     max_participants = Column(Integer, default=32)
+    chat_id = Column(BigInteger, nullable=True)  # группа где идет сбор и жеребьевка
 
     participants = relationship("Participant", back_populates="tournament", cascade="all, delete-orphan")
     groups = relationship("Group", back_populates="tournament", cascade="all, delete-orphan")
