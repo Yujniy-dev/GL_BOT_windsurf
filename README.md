@@ -51,73 +51,49 @@ Telegram-бот для проведения групповых турниров 
 
 ---
 
-## Шаг 4. Регистрация на PythonAnywhere
+## Шаг 4. Регистрация на Render
 
-- [pythonanywhere.com](https://www.pythonanywhere.com)
-- `Create a Beginner account` (бесплатно, **без карты**)
-- Придумай username — он станет частью URL (`username.pythonanywhere.com`)
+**Важно:** PythonAnywhere free tier блокирует Telegram API. Используем **Render** — бесплатно, без карты.
+
+- Зайди на [render.com](https://render.com)
+- Нажми `Get Started For Free`
+- Регистрация через **GitHub** (самый простой способ)
+- Подтверди email
 
 ---
 
-## Шаг 5. Настройка на PythonAnywhere
+## Шаг 5. Деплой на Render
 
-### 5.1 Открываем Bash-консоль
-- Вверху нажми **Consoles**
-- Нажми **Bash**
+### 5.1 Создаем Web Service
+1. В Dashboard нажми `New +` → `Web Service`
+2. Выбери свой репозиторий `fc-mobile-bot`
+3. Настройки:
+   - **Name**: `fc-mobile-bot` (или любое)
+   - **Region**: Frankfurt (EU Central)
+   - **Runtime**: Python 3
+   - **Build Command**: `pip install -r requirements.txt`
+   - **Start Command**: `python setup_webhook.py && gunicorn main:app`
+4. Нажми `Create Web Service`
 
-### 5.2 Копируем код с GitHub
-Вставь в консоль (замени `bogdan` на свой GitHub username):
+### 5.2 Добавляем переменные окружения
+1. На странице сервиса перейди во вкладку **Environment**
+2. Добавь переменные (кнопка `Add Environment Variable`):
 
-```bash
-git clone https://github.com/bogdan/fc-mobile-bot.git fcbot
-cd fcbot
-python3.11 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-```
+| Key | Value |
+|---|---|
+| `BOT_TOKEN` | `твой_токен_от_BotFather` |
+| `ADMIN_IDS` | `твой_telegram_id` |
+| `WEBAPP_URL` | `https://fc-mobile-bot-xxx.onrender.com` (подставь свой URL из Render) |
 
-### 5.3 Создаем .env файл
-- Перейди во вкладку **Files**
-- Слева кликни `fcbot` → `New file`
-- Назови `.env` (с точкой!)
-- Вставь и сохрани:
+3. URL сервиса виден на странице Dashboard (например `https://fc-mobile-bot-abc123.onrender.com`)
 
-```
-BOT_TOKEN=твой_токен_от_BotFather
-ADMIN_IDS=твой_telegram_id
-WEBAPP_URL=https://твой_юзернейм.pythonanywhere.com
-```
+### 5.3 Ждем деплой
+- Render автоматически соберёт и запустит
+- Во вкладке **Logs** будут зелёные строки — значит всё ок
+- Когда увидишь `Webhook set to ...` — готово!
 
-### 5.4 Создаем Web App
-- Вверху нажми **Web**
-- Нажми `Add a new web app`
-- `Next` → `Flask` → `Python 3.11` → `Next`
-
-### 5.5 Настраиваем WSGI
-- На странице Web найди раздел **Code**
-- Нажми ссылку `WSGI configuration file` (что-то вроде `/var/www/username_pythonanywhere_com_wsgi.py`)
-- **Удали всё** из файла и вставь:
-
-```python
-import sys
-path = '/home/ТВОЙ_ЮЗЕРНЕЙМ/fcbot'
-if path not in sys.path:
-    sys.path.insert(0, path)
-from main import app as application
-import main
-main._set_webhook()
-```
-
-- Замени `ТВОЙ_ЮЗЕРНЕЙМ` на твой username с PythonAnywhere
-- Сохрани (зелёная кнопка)
-
-### 5.6 Перезагружаем
-- Верись на вкладку **Web**
-- Нажми зелёную кнопку **Reload** (рядом с именем сайта)
-- Жди 10-20 секунд
-
-### 5.7 Проверяем
-- Открой в новой вкладке: `https://твой_юзернейм.pythonanywhere.com`
+### 5.4 Проверяем
+- Открой URL сервиса в браузере
 - Должна открыться страница бота
 
 ---
@@ -126,9 +102,12 @@ main._set_webhook()
 
 В BotFather:
 - `Bot Settings` → `Menu Button`
-- Поменяй URL на: `https://твой_юзернейм.pythonanywhere.com`
+- Поменяй URL на: `https://твой-url-с-render.onrender.com/app.html`
+- Текст кнопки: `Мои матчи`
 
 Добавь бота в группу, дай права администратора.
+
+> **Note:** Render free tier "засыпает" через 15 минут неактивности. При любом сообщении в бота или открытии WebApp сервер мгновенно просыпается. Если нужен 100% uptime — рассмотри платный тариф ($7/мес) или [Railway](https://railway.app) ($5 кредитов/мес на free tier).
 
 ---
 

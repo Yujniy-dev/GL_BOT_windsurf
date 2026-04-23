@@ -4,3 +4,4 @@ aiohttp==3.9.5
 flask==3.0.3
 python-dotenv==1.0.1
 nest_asyncio==1.6.0
+gunicorn==22.0.0
