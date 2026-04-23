@@ -85,8 +85,30 @@ Telegram-бот для проведения групповых турниров 
 | `ADMIN_IDS` | `твой_telegram_id` |
 | `WEBAPP_URL` | `https://fc-mobile-bot-xxx.onrender.com` (подставь свой URL из Render) |
 | `OCR_API_KEY` | `твой_ключ_с_ocr.space` (для распознавания скриншотов) |
+| `DATABASE_URL` | `postgresql://...` (см. Шаг 5.2.1 ниже) |
 
 Получи бесплатный OCR ключ на [ocr.space/ocrapi/freekey](https://ocr.space/ocrapi/freekey) — просто введи email, ключ придёт в письме. 25000 запросов/месяц бесплатно.
+
+### 5.2.1 Neon Postgres (постоянная БД)
+
+**Важно:** Render free tier стирает файловую систему при каждом деплое. Без внешней БД бот забудет все турниры и группы. Подключаем Neon — бесплатно и навсегда.
+
+1. Зайди на [neon.tech](https://neon.tech) → `Sign up` (через GitHub проще всего)
+2. После регистрации откроется мастер создания проекта:
+   - **Project name**: `fc-mobile-bot` (любое)
+   - **Postgres version**: оставь по умолчанию (16+)
+   - **Region**: Europe (Frankfurt) или ближайший
+   - Нажми `Create project`
+3. Откроется страница с **Connection string** (выглядит как `postgresql://user:pass@ep-xxx.eu-central-1.aws.neon.tech/neondb?sslmode=require`)
+4. Нажми **Copy** — скопируй всю строку
+5. В Render → вкладка **Environment** → `Add Environment Variable`:
+   - Key: `DATABASE_URL`
+   - Value: вставь скопированную строку
+   - `Save Changes`
+
+Render автоматически пересоберёт сервис. В логах появится `Webhook set to ...` — всё готово.
+
+**Готово!** Теперь БД живёт в Neon, а не на Render. Коммиты не стирают данные.
 
 3. URL сервиса виден на странице Dashboard (например `https://fc-mobile-bot-abc123.onrender.com`)
 

@@ -14,4 +14,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_IDS = list(map(int, os.getenv("ADMIN_IDS", "").split(","))) if os.getenv("ADMIN_IDS") else []
 WEBAPP_URL = os.getenv("WEBAPP_URL", "")
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{os.path.join(BASE_DIR, 'tournament.db')}")
+# Render/Heroku дают 'postgres://' — SQLAlchemy 2.x требует 'postgresql://'
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 OCR_API_KEY = os.getenv("OCR_API_KEY", "helloworld")  # 'helloworld' = public demo key (ограничен); получи свой на ocr.space
