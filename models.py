@@ -1,6 +1,6 @@
 import enum
 from datetime import datetime
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, ForeignKey, Enum
+from sqlalchemy import create_engine, Column, Integer, BigInteger, String, DateTime, ForeignKey, Enum
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 from config import DATABASE_URL
 
@@ -34,7 +34,7 @@ class Participant(Base):
     __tablename__ = "participants"
     id = Column(Integer, primary_key=True)
     tournament_id = Column(Integer, ForeignKey("tournaments.id"))
-    user_id = Column(Integer, nullable=False)
+    user_id = Column(BigInteger, nullable=False)
     username = Column(String)
     game_nickname = Column(String, nullable=False)
     group_id = Column(Integer, ForeignKey("groups.id"), nullable=True)
@@ -69,6 +69,14 @@ class Match(Base):
     tournament = relationship("Tournament", back_populates="matches")
     player1 = relationship("Participant", foreign_keys=[player1_id])
     player2 = relationship("Participant", foreign_keys=[player2_id])
+
+
+class Chat(Base):
+    __tablename__ = "chats"
+    id = Column(Integer, primary_key=True)
+    chat_id = Column(BigInteger, nullable=False, unique=True)
+    title = Column(String, nullable=False)
+    is_active = Column(Integer, default=1)  # 1 = bot is in chat, 0 = kicked
 
 
 def init_db():

@@ -2,7 +2,7 @@ import logging, re, asyncio
 from aiogram import Bot, Dispatcher, Router, F, types
 from aiogram.filters import Command, CommandStart
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
-from models import get_db, Participant
+from models import get_db, Participant, Chat
 from tournament import (
     create_tournament, register_participant, close_registration,
     get_active_tournament, get_user_matches, get_all_standings,
@@ -23,6 +23,21 @@ def kb(user_id):
     b=[[KeyboardButton(text="🏆 Турнир")],[KeyboardButton(text="📊 Мои матчи", web_app=WebAppInfo(url=f"{WEBAPP_URL}/app.html"))]]
     if user_id in ADMIN_IDS: b.append([KeyboardButton(text="⚙️ Админ")])
     return ReplyKeyboardMarkup(keyboard=b, resize_keyboard=True)
+
+def save_chat(chat_id, title, active=1):
+    db=next(get_db())
+    ex=db.query(Chat).filter(Chat.chat_id==chat_id).first()
+    if ex:
+        ex.title=title; ex.is_active=active
+    else:
+        db.add(Chat(chat_id=chat_id, title=title, is_active=active))
+    db.commit()
+
+@router.my_chat_member()
+async def on_my_chat_member(ev: types.ChatMemberUpdated):
+    if ev.chat.type in ("group","supergroup"):
+        active = 1 if ev.new_chat_member.status in ("member","administrator","creator") else 0
+        save_chat(ev.chat.id, ev.chat.title or f"Chat {ev.chat.id}", active)
 
 @router.message(CommandStart())
 async def start(m: types.Message):
@@ -68,11 +83,29 @@ async def proc_create(m: types.Message):
 
 @router.callback_query(F.data=="ad:open")
 async def ad_open(c: types.CallbackQuery):
-    global reg_msg_id, reg_chat_id, reg_text
     db=next(get_db()); t=get_active_tournament(db)
     if not t or t.status.value!="registration": return await c.answer("Нет турнира в регистрации!")
-    msg=await c.message.answer(f"📝 <b>Сбор на {t.name}!</b>\n\nОтветь +ник\nПример: <code>+ProPlayer</code>\n\nУчастники:\n", parse_mode="HTML")
-    reg_msg_id, reg_chat_id, reg_text = msg.message_id, msg.chat.id, msg.html_text
+    chats=db.query(Chat).filter(Chat.is_active==1).all()
+    if not chats:
+        return await c.message.answer("❌ Бот не добавлен ни в одну группу!\n\nДобавь бота в группу и сделай его администратором, потом повтори.")
+    rows=[[InlineKeyboardButton(text=f"📢 {ch.title}", callback_data=f"ad:open:{ch.chat_id}")] for ch in chats]
+    kbm=InlineKeyboardMarkup(inline_keyboard=rows)
+    await c.message.answer("Выбери группу для сбора участников:", reply_markup=kbm)
+    await c.answer()
+
+@router.callback_query(F.data.startswith("ad:open:"))
+async def ad_open_chat(c: types.CallbackQuery):
+    global reg_msg_id, reg_chat_id, reg_text
+    if c.from_user.id not in ADMIN_IDS: return await c.answer("Нет доступа.")
+    chat_id=int(c.data.split(":")[2])
+    db=next(get_db()); t=get_active_tournament(db)
+    if not t or t.status.value!="registration": return await c.answer("Нет турнира в регистрации!")
+    try:
+        msg=await c.bot.send_message(chat_id, f"📝 <b>Сбор на {t.name}!</b>\n\nОтветь +ник\nПример: <code>+ProPlayer</code>\n\nУчастники:\n", parse_mode="HTML")
+        reg_msg_id, reg_chat_id, reg_text = msg.message_id, msg.chat.id, msg.html_text
+        await c.message.answer(f"✅ Сбор открыт в группе: <b>{msg.chat.title}</b>", parse_mode="HTML")
+    except Exception as e:
+        await c.message.answer(f"❌ Не удалось отправить в группу: {e}")
     await c.answer()
 
 @router.message(F.reply_to_message, F.text.regexp(r'^\+(\S+)$'))

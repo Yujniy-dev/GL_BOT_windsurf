@@ -19,10 +19,13 @@ dp = Dispatcher()
 dp.include_router(router)
 
 
+ALLOWED_UPDATES = ["message", "callback_query", "my_chat_member", "chat_member"]
+
+
 def _set_webhook():
     wh_url = f"{WEBAPP_URL}/webhook"
     try:
-        asyncio.run(bot.set_webhook(url=wh_url))
+        asyncio.run(bot.set_webhook(url=wh_url, allowed_updates=ALLOWED_UPDATES))
         logging.info(f"Webhook set to {wh_url}")
     except Exception as e:
         logging.warning(f"Webhook setup error: {e}")
