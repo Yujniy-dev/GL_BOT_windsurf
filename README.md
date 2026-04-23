@@ -72,7 +72,7 @@ Telegram-бот для проведения групповых турниров 
    - **Region**: Frankfurt (EU Central)
    - **Runtime**: Python 3
    - **Build Command**: `pip install -r requirements.txt`
-   - **Start Command**: `python setup_webhook.py && gunicorn main:app`
+   - **Start Command**: `python setup_webhook.py && gunicorn main:app --bind 0.0.0.0:$PORT`
 4. Нажми `Create Web Service`
 
 ### 5.2 Добавляем переменные окружения
