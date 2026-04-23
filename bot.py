@@ -10,7 +10,7 @@ from tournament import (
     find_match_by_players, submit_match_result, get_remaining_matches_for_user
 )
 from config import BOT_TOKEN, ADMIN_IDS, WEBAPP_URL
-from ocr import recognize_image, parse_score
+from ocr import recognize_image, parse_score, find_participants
 
 logging.basicConfig(level=logging.INFO)
 router = Router()
@@ -103,7 +103,7 @@ async def ad_open_chat(c: types.CallbackQuery):
     db=next(get_db()); t=get_active_tournament(db)
     if not t or t.status.value!="registration": return await c.answer("Нет турнира в регистрации!")
     try:
-        msg=await c.bot.send_message(chat_id, f"📝 <b>Сбор на {t.name}!</b>\n\nОтветь +ник\nПример: <code>+ProPlayer</code>\n\nУчастники:\n", parse_mode="HTML")
+        msg=await c.bot.send_message(chat_id, f"📝 <b>Сбор на {t.name}!</b>\n\nОтветь +клубное_имя (как отображается в FC Mobile на скрине матча)\nПример: <code>+GL·Distra</code>\n\nУчастники:\n", parse_mode="HTML")
         reg_msg_id, reg_chat_id, reg_text = msg.message_id, msg.chat.id, msg.html_text
         t.chat_id = msg.chat.id
         db.commit()
@@ -234,7 +234,29 @@ async def handle_photo(m: types.Message):
             parse_mode="HTML"
         )
     s1,s2=score
-    # кнопки с соперниками
+    # попытка fuzzy match: ищем оба клубных имени в тексте
+    all_participants=list(t.participants)
+    fp1, fp2, _ = find_participants(text, all_participants)
+    if fp1 and fp2 and fp1.id != fp2.id:
+        # проверяем что один из них — отправитель
+        if participant.id in (fp1.id, fp2.id):
+            # ищем матч между fp1 и fp2
+            auto_match=find_match_by_players(db, t.id, fp1.id, fp2.id)
+            if auto_match:
+                # fp1 слева — значит его счёт s1, fp2 справа — его счёт s2
+                if auto_match.player1_id == fp1.id:
+                    p1_score, p2_score = s1, s2
+                else:
+                    p1_score, p2_score = s2, s1
+                submit_match_result(db, auto_match.id, p1_score, p2_score)
+                p1n = auto_match.player1.game_nickname if auto_match.player1 else "?"
+                p2n = auto_match.player2.game_nickname if auto_match.player2 else "?"
+                return await status_msg.edit_text(
+                    f"✅ Автораспознано и сохранено:\n<b>{p1n} {p1_score}:{p2_score} {p2n}</b>\n\n"
+                    f"🎯 Распознаны по скрину: {fp1.game_nickname} vs {fp2.game_nickname}",
+                    parse_mode="HTML"
+                )
+    # fallback: кнопки с соперниками
     rows=[]
     for mt in pending:
         opp = mt.player2 if mt.player1_id==participant.id else mt.player1
@@ -248,8 +270,11 @@ async def handle_photo(m: types.Message):
     rows.append([InlineKeyboardButton(text="🔁 Перевернуть счёт", callback_data=f"ocrflip:{s1}:{s2}")])
     rows.append([InlineKeyboardButton(text="❌ Отмена", callback_data="ocrcancel")])
     kb=InlineKeyboardMarkup(inline_keyboard=rows)
+    hint = ""
+    if fp1 and fp2:
+        hint = f"\n<i>Нашёл в тексте: {fp1.game_nickname}, {fp2.game_nickname} — но они не играют в этом матче.</i>"
     await status_msg.edit_text(
-        f"📸 Распознан счёт: <b>{s1}:{s2}</b>\n\nВыбери соперника:",
+        f"📸 Распознан счёт: <b>{s1}:{s2}</b>{hint}\n\nВыбери соперника:",
         parse_mode="HTML",
         reply_markup=kb
     )
